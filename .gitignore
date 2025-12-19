@@ -1,0 +1,14 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+
+# Environment
+.env
+
+# Uploads / runtime data
+uploads/
+
+# OS
+.DS_Store
+
