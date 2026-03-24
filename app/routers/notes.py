@@ -227,6 +227,22 @@ async def call_ocr_service(image_path: str) -> dict:
         )
 
 
+@router.post("/ocr/warm")
+async def warm_ocr_model():
+    """
+    Pre-load the PaddleOCR model in the background.
+    Call this after login so the first 'Send to OCR' request skips the cold-start delay.
+    Never raises — warming is best-effort.
+    """
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(5.0, read=120.0)) as client:
+            resp = await client.post(f"{OCR_SERVICE_URL}/warm")
+            return resp.json()
+    except Exception as e:
+        logger.info(f"OCR warm request could not complete (non-critical): {e}")
+        return {"status": "warming"}
+
+
 @router.post("/ocr", response_model=dict)
 async def process_image_with_ocr(
     file: UploadFile = File(...),
