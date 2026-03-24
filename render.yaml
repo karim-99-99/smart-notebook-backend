@@ -1,0 +1,29 @@
+# Render Blueprint — backend repo root (this folder).
+# After deploy, set OCR_SERVICE_URL in the dashboard to your OCR web service URL.
+
+databases:
+  - name: smart-notebook-db
+    databaseName: smart_note
+    plan: free
+
+services:
+  - type: web
+    runtime: docker
+    name: smart-notebook-backend
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: smart-notebook-db
+          property: connectionString
+      - key: OCR_SERVICE_URL
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: UPLOAD_FOLDER
+        value: /app/uploads
+      - key: OCR_RATE_LIMIT_PER_MIN
+        value: "10"
+      - key: OCR_MAX_WIDTH
+        value: "1500"

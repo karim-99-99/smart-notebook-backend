@@ -1,3 +1,7 @@
+# Smart Notebook API + Postgres (this repo).
+# Run OCR separately: clone the ocr-service repo and `docker compose up` there on port 9000,
+# or set OCR_SERVICE_URL to a deployed OCR URL.
+
 services:
   db:
     image: postgres:15
@@ -11,6 +15,11 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kareem -d smart_note"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   backend:
     build: .
@@ -19,11 +28,29 @@ services:
     ports:
       - "8000:8000"
     env_file:
-      - .env
+      - path: .env
+        required: false
+    environment:
+      POSTGRES_HOST: db
+      POSTGRES_USER: kareem
+      POSTGRES_PASSWORD: secret123
+      POSTGRES_DB: smart_note
+      DATABASE_URL: postgresql://kareem:secret123@db:5432/smart_note
+      OCR_SERVICE_URL: ${OCR_SERVICE_URL:-http://host.docker.internal:9000}
+      UPLOAD_FOLDER: /app/uploads
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     volumes:
       - ./:/app
+      - backend_uploads:/app/uploads
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 15s
 
 volumes:
   postgres_data:
+  backend_uploads:

@@ -1,0 +1,27 @@
+# API only (no Postgres, no OCR in this file).
+# Set DATABASE_URL to Supabase / managed Postgres, and OCR_SERVICE_URL to your deployed OCR service.
+
+services:
+  backend:
+    build: .
+    container_name: sn_backend
+    restart: always
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
+      OCR_SERVICE_URL: ${OCR_SERVICE_URL}
+      UPLOAD_FOLDER: /app/uploads
+    volumes:
+      - backend_uploads:/app/uploads
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 15s
+
+volumes:
+  backend_uploads:

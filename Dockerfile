@@ -1,8 +1,11 @@
 # Use official Python image
 FROM python:3.12-slim
 
-# Install curl for health checks
-RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+# DejaVu provides Arabic glyphs for ReportLab PDF export (slim image has no fonts by default).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    fonts-dejavu-core \
+    && rm -rf /var/lib/apt/lists/*
 
 # Set working directory
 WORKDIR /app

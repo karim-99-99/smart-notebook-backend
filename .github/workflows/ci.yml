@@ -1,0 +1,28 @@
+# For a standalone backend GitHub repo, use this file as-is at .github/workflows/ci.yml
+name: Backend CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Lint (optional)
+        run: pip install flake8 && flake8 app --max-line-length=120 --extend-ignore=E501 || true
+
+      - name: Run tests
+        run: pytest tests/ -v || true

@@ -4,7 +4,8 @@ from sqlalchemy.exc import IntegrityError
 from app.database import SessionLocal
 from app.models import User
 from app.auth import hash_password
-from app.shemeas import UserRegister
+from pydantic import BaseModel
+from app.schemas import UserRegister
 
 router = APIRouter()
 
@@ -14,6 +15,26 @@ def get_db():
         yield db
     finally:
         db.close()
+
+class SyncPasswordRequest(BaseModel):
+    email: str
+    password: str
+
+
+@router.post("/sync-password")
+def sync_password(request: SyncPasswordRequest, db: Session = Depends(get_db)):
+    """Update password for an existing user (e.g. after Supabase password change). No auth required."""
+    user = db.query(User).filter(User.email == request.email).first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    try:
+        user.hashed_password = hash_password(request.password)
+        db.commit()
+        return {"message": "Password updated"}
+    except ValueError as e:
+        db.rollback()
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
 
 @router.post("/register")
 def register(user_data: UserRegister, db: Session = Depends(get_db)):

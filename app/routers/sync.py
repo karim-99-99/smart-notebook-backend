@@ -23,6 +23,10 @@ router = APIRouter(prefix="/sync", tags=["sync"])
 # Cloud storage configuration
 CLOUD_STORAGE_BASE_URL = os.getenv("CLOUD_STORAGE_BASE_URL", "http://localhost:8000/api/storage")
 UPLOAD_FOLDER = os.getenv("UPLOAD_FOLDER", "uploads")
+# If relative, resolve against backend root (parent of app/) so path is writable
+if not os.path.isabs(UPLOAD_FOLDER):
+    _backend_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    UPLOAD_FOLDER = os.path.join(_backend_root, UPLOAD_FOLDER)
 # Normalize paths for Windows compatibility
 UPLOAD_FOLDER = os.path.normpath(UPLOAD_FOLDER)
 if platform.system() == 'Windows':
@@ -31,7 +35,10 @@ CLOUD_IMAGES_FOLDER = os.path.join(UPLOAD_FOLDER, "cloud_images")
 CLOUD_IMAGES_FOLDER = os.path.normpath(CLOUD_IMAGES_FOLDER)
 if platform.system() == 'Windows':
     CLOUD_IMAGES_FOLDER = CLOUD_IMAGES_FOLDER.replace('/', '\\')
-os.makedirs(CLOUD_IMAGES_FOLDER, exist_ok=True)
+try:
+    os.makedirs(CLOUD_IMAGES_FOLDER, exist_ok=True)
+except OSError as e:
+    logger.warning("Could not create cloud_images folder %s: %s. Sync image upload may fail.", CLOUD_IMAGES_FOLDER, e)
 
 
 # ============================================================================
