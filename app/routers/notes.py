@@ -5,6 +5,7 @@ from app.models import Note, User
 from app.utils.security import get_current_user, get_db
 from app.utils.rate_limit import check_ocr_rate_limit
 from app.utils.usage_stats import record_ocr_success, record_ocr_failure
+import asyncio
 import httpx
 import os
 import uuid
@@ -177,54 +178,93 @@ class WordExportRequest(BaseModel):
 async def call_ocr_service(image_path: str) -> dict:
     """
     Call OCR service to extract text from image.
-    
-    Args:
-        image_path: Path to the image file
-        
-    Returns:
-        Dictionary with OCR results (text, lines, etc.)
+
+    Render (and similar hosts) often return 429/503 on free tiers; we retry with backoff.
+    Env: OCR_UPSTREAM_RETRIES (default 5), OCR_UPSTREAM_RETRY_DELAY_SEC (default 3).
     """
-    try:
-        with open(image_path, "rb") as image_file:
-            files = {"file": image_file}
-            timeout = httpx.Timeout(
-                connect=20.0,
-                read=OCR_REQUEST_TIMEOUT_SEC,
-                write=120.0,
-                pool=20.0,
-            )
+    timeout = httpx.Timeout(
+        connect=20.0,
+        read=OCR_REQUEST_TIMEOUT_SEC,
+        write=120.0,
+        pool=20.0,
+    )
+    max_attempts = int(os.getenv("OCR_UPSTREAM_RETRIES", "5"))
+    base_delay = float(os.getenv("OCR_UPSTREAM_RETRY_DELAY_SEC", "3"))
+
+    for attempt in range(max_attempts):
+        try:
             async with httpx.AsyncClient(timeout=timeout) as client:
-                response = await client.post(
-                    f"{OCR_SERVICE_URL}/ocr",
-                    files=files
+                with open(image_path, "rb") as image_file:
+                    response = await client.post(
+                        f"{OCR_SERVICE_URL}/ocr",
+                        files={"file": image_file},
+                    )
+
+            if response.status_code in (429, 503) and attempt < max_attempts - 1:
+                delay = base_delay * (2**attempt)
+                logger.warning(
+                    "OCR upstream returned %s (attempt %s/%s), retrying in %.1fs",
+                    response.status_code,
+                    attempt + 1,
+                    max_attempts,
+                    delay,
                 )
-                response.raise_for_status()
-                return response.json()
-    except httpx.TimeoutException:
-        logger.error(
-            "OCR service timeout for image %s after %.0fs read limit",
-            image_path,
-            OCR_REQUEST_TIMEOUT_SEC,
-        )
-        raise HTTPException(
-            status_code=504,
-            detail=(
-                f"OCR timed out after {int(OCR_REQUEST_TIMEOUT_SEC)}s. "
-                "Try again (first run loads models), use a smaller photo, or increase OCR_REQUEST_TIMEOUT_SEC."
-            ),
-        )
-    except httpx.HTTPStatusError as e:
-        logger.error(f"OCR service error: {e.response.status_code} - {e.response.text}")
-        raise HTTPException(
-            status_code=502,
-            detail=f"OCR service error: {str(e)}"
-        )
-    except Exception as e:
-        logger.error(f"Error calling OCR service: {str(e)}")
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to process image with OCR: {str(e)}"
-        )
+                await asyncio.sleep(delay)
+                continue
+
+            if response.status_code == 429:
+                logger.error(
+                    "OCR upstream rate-limited after %s attempts: %s",
+                    max_attempts,
+                    (response.text or "")[:300],
+                )
+                raise HTTPException(
+                    status_code=503,
+                    detail=(
+                        "OCR is temporarily rate-limited (hosting throttle, often on Render free tier). "
+                        "Wait 1–2 minutes and tap Send to OCR again, or upgrade the OCR web service on Render."
+                    ),
+                )
+
+            response.raise_for_status()
+            return response.json()
+
+        except httpx.TimeoutException:
+            logger.error(
+                "OCR service timeout for image %s after %.0fs read limit",
+                image_path,
+                OCR_REQUEST_TIMEOUT_SEC,
+            )
+            raise HTTPException(
+                status_code=504,
+                detail=(
+                    f"OCR timed out after {int(OCR_REQUEST_TIMEOUT_SEC)}s. "
+                    "Try again (first run loads models), use a smaller photo, or increase OCR_REQUEST_TIMEOUT_SEC."
+                ),
+            )
+        except httpx.HTTPStatusError as e:
+            logger.error(
+                "OCR service error: %s - %s",
+                e.response.status_code,
+                e.response.text,
+            )
+            raise HTTPException(
+                status_code=502,
+                detail=f"OCR service error: {str(e)}",
+            )
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error("Error calling OCR service: %s", str(e))
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to process image with OCR: {str(e)}",
+            )
+
+    raise HTTPException(
+        status_code=503,
+        detail="OCR upstream unavailable after retries. Try again in a minute.",
+    )
 
 
 @router.post("/ocr/warm")

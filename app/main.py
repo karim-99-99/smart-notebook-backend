@@ -1,5 +1,6 @@
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from app.database import Base, engine
 from app.models import User, Note, Folder
@@ -19,6 +20,14 @@ except Exception as e:
     logger.error(f"Error creating database tables: {e}")
 
 app = FastAPI(title="Smart Notebook API", version="1.0.0")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Exception handlers must be registered BEFORE middleware so they are wired
 # into ServerErrorMiddleware when build_middleware_stack() fires on the first request.
